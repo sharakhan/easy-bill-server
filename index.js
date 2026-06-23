@@ -6,7 +6,16 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://easy-bills-clients.vercel.app",
+    ],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 // Test route
@@ -25,76 +34,93 @@ const client = new MongoClient(uri, {
   },
 });
 
-async function run() {
-  try {
+// 🔥 GLOBAL CACHE (IMPORTANT FIX)
+let db;
+let billCollection;
+let paidBills;
+
+// 🔥 SAFE DB CONNECT FUNCTION
+async function connectDB() {
+  if (!db) {
     await client.connect();
-    console.log("MongoDB connected");
+    db = client.db("easyBill");
 
-    const db = client.db("easyBill");
-    const billCollection = db.collection("bill");
-    const paidBills = db.collection("paidBills");
+    billCollection = db.collection("bill");
+    paidBills = db.collection("paidBills");
 
-    // GET ALL BILLS
-    app.get("/bill", async (req, res) => {
-      try {
-        const result = await billCollection.find({}).toArray();
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ error: "Failed to fetch bills" });
-      }
-    });
-
-    // GET BILL BY ID
-    app.get("/bill/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ error: "Invalid ID" });
-        }
-
-        const bill = await billCollection.findOne({
-          _id: new ObjectId(id),
-        });
-
-        if (!bill) {
-          return res.status(404).send({ error: "Bill not found" });
-        }
-
-        res.send(bill);
-      } catch (error) {
-        res.status(500).send({ error: "Server error" });
-      }
-    });
-
-    // POST PAYMENT
-    app.post("/newPay", async (req, res) => {
-      try {
-        const payment = req.body;
-
-        if (!payment) {
-          return res.status(400).send({ error: "No payment data provided" });
-        }
-
-        const result = await paidBills.insertOne(payment);
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ error: "Payment failed" });
-      }
-    });
-  } catch (error) {
-    console.error("MongoDB connection failed:", error);
+    console.log("MongoDB Connected");
   }
+  return db;
 }
 
-run().catch(console.error);
+// ================== ROUTES ==================
 
-// Server start (IMPORTANT FIX)
-const PORT = process.env.PORT || 5000;
+// GET ALL BILLS
+app.get("/bill", async (req, res) => {
+  try {
+    await connectDB();
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+    const result = await billCollection.find({}).toArray();
+    res.send(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ error: "Failed to fetch bills" });
+  }
 });
 
-// Export app (for Vercel or testing)
+// GET BILL BY ID
+app.get("/bill/:id", async (req, res) => {
+  try {
+    await connectDB();
+
+    const id = req.params.id;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ error: "Invalid ID" });
+    }
+
+    const bill = await billCollection.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!bill) {
+      return res.status(404).send({ error: "Bill not found" });
+    }
+
+    res.send(bill);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ error: "Server error" });
+  }
+});
+
+// POST PAYMENT
+app.post("/newPay", async (req, res) => {
+  try {
+    await connectDB();
+
+    const payment = req.body;
+
+    if (!payment) {
+      return res.status(400).send({ error: "No payment data provided" });
+    }
+
+    const result = await paidBills.insertOne(payment);
+
+    res.send(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ error: "Payment failed" });
+  }
+});
+
+// ❌ REMOVE app.listen FOR VERCEL (IMPORTANT)
+if (process.env.NODE_ENV !== "production") {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+// Export for Vercel
 module.exports = app;

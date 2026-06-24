@@ -7,7 +7,9 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const {
   errorHandler,
   notFoundHandler,
-} = require("./src/middlewares/errorHandler");
+} = require("./src/config/middlewares/errorHandler");
+
+
 
 const app = express();
 

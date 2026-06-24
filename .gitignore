@@ -5,3 +5,6 @@ node_modules
 .env.production.local
 .env.test.local
 dist
+# Firebase service account key
+firebase-service-account-key.json
+.vercel

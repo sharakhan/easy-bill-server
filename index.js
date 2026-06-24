@@ -3,6 +3,12 @@ const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
+// Import Error Handlers
+const {
+  errorHandler,
+  notFoundHandler,
+} = require("./src/middlewars/errorHandler");
+
 const app = express();
 
 // Middleware
@@ -18,12 +24,12 @@ app.use(
 
 app.use(express.json());
 
-// Test route
+// Test Route
 app.get("/", (req, res) => {
   res.send("Server is running fine!");
 });
 
-// MongoDB setup
+// MongoDB Setup
 const uri = process.env.MONGODB_URI;
 
 const client = new MongoClient(uri, {
@@ -34,49 +40,52 @@ const client = new MongoClient(uri, {
   },
 });
 
-// 🔥 GLOBAL CACHE (IMPORTANT FIX)
+// Global DB Cache
 let db;
 let billCollection;
 let paidBills;
 
-// 🔥 SAFE DB CONNECT FUNCTION
 async function connectDB() {
   if (!db) {
     await client.connect();
+
     db = client.db("easyBill");
 
     billCollection = db.collection("bill");
     paidBills = db.collection("paidBills");
 
-    console.log("MongoDB Connected");
+    console.log("✅ MongoDB Connected");
   }
+
   return db;
 }
 
-// ================== ROUTES ==================
+// ================= ROUTES =================
 
 // GET ALL BILLS
-app.get("/bill", async (req, res) => {
+app.get("/bill", async (req, res, next) => {
   try {
     await connectDB();
 
     const result = await billCollection.find({}).toArray();
+
     res.send(result);
   } catch (error) {
-    console.error(error);
-    res.status(500).send({ error: "Failed to fetch bills" });
+    next(error);
   }
 });
 
 // GET BILL BY ID
-app.get("/bill/:id", async (req, res) => {
+app.get("/bill/:id", async (req, res, next) => {
   try {
     await connectDB();
 
     const id = req.params.id;
 
     if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ error: "Invalid ID" });
+      const error = new Error("Invalid Bill ID");
+      error.statusCode = 400;
+      throw error;
     }
 
     const bill = await billCollection.findOne({
@@ -84,41 +93,53 @@ app.get("/bill/:id", async (req, res) => {
     });
 
     if (!bill) {
-      return res.status(404).send({ error: "Bill not found" });
+      const error = new Error("Bill not found");
+      error.statusCode = 404;
+      throw error;
     }
 
     res.send(bill);
   } catch (error) {
-    console.error(error);
-    res.status(500).send({ error: "Server error" });
+    next(error);
   }
 });
 
 // POST PAYMENT
-app.post("/newPay", async (req, res) => {
+app.post("/newPay", async (req, res, next) => {
   try {
     await connectDB();
 
     const payment = req.body;
 
-    if (!payment) {
-      return res.status(400).send({ error: "No payment data provided" });
+    if (!payment || Object.keys(payment).length === 0) {
+      const error = new Error("Payment data is required");
+      error.statusCode = 400;
+      throw error;
     }
 
     const result = await paidBills.insertOne(payment);
 
-    res.send(result);
+    res.status(201).send(result);
   } catch (error) {
-    console.error(error);
-    res.status(500).send({ error: "Payment failed" });
+    next(error);
   }
 });
 
-// ❌ REMOVE app.listen FOR VERCEL (IMPORTANT)
+// ================= ERROR HANDLERS =================
+
+// 404 Route Handler
+app.use(notFoundHandler);
+
+// Global Error Handler
+app.use(errorHandler);
+
+// ================= SERVER =================
+
 if (process.env.NODE_ENV !== "production") {
   const PORT = process.env.PORT || 5000;
+
   app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
   });
 }
 
